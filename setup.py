@@ -6,7 +6,7 @@ setup(
     name = "satori-cli",
     version = "0.1",
     packages = find_packages(),
-    scripts = ['satori.py'],
+    scripts = ['satori'],
 
     install_requires = ['requests', 'pyquery', 'lxml'],
 
