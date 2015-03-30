@@ -116,9 +116,11 @@ class Session(object):
         if not 'satori_token' in self.settings:
             self._login()
         if LOG_REQUESTS:
-            color = '\33[1;30m'
+            log_line = '{} {}...'.format(method, path)
+            color1 = '\33[0;33m'
+            color2 = '\33[1;30m'
             endcolor = '\33[m'
-            sys.stderr.write(color + '{} {}...'.format(method, path) + endcolor)
+            sys.stderr.write(color1 + log_line + endcolor)
             sys.stderr.flush()
         r = requests.request(method, BASE + path,
                              files=files,
@@ -128,7 +130,7 @@ class Session(object):
                                       'satori_token='
                                       + self.settings['satori_token']})
         if LOG_REQUESTS:
-            sys.stderr.write(color + '\b\b\b -> {}'.format(r.status_code) + endcolor + '\n')
+            sys.stderr.write(color2 + '\r' + log_line + '-> {}'.format(r.status_code) + endcolor + '\n')
         if parse:
             return pq(r.content)
         else:
@@ -310,13 +312,13 @@ class Session(object):
 def notify_status(problem, status):
     subprocess.check_call(['notify-send', 'New status for {}: {}'.format(problem, status)])
 
-def wait(sess, contest, id):
+def wait(sess, contest, id, notify=True):
     contest = sess.match_contest(contest)
     last_status = ''
     while True:
         problem, status, tests = sess.get_status(contest, id)
         if status != last_status:
-            notify_status(problem, status)
+            if notify: notify_status(problem, status)
             last_status = status
         if status and status != 'QUE':
             break
@@ -326,6 +328,8 @@ def wait(sess, contest, id):
         sess.print_status(contest, id, out)
         print >>out
 
+    if not notify:
+        sess.print_status(contest, id)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -423,7 +427,7 @@ def main():
         id = ns.id
         if id == 0:
             id = sess.get_last_submit(ns.contest)
-        wait(sess, ns.contest, id)
+        wait(sess, ns.contest, id, notify=False)
 
     elif ns.command == 'submit':
         sess.submit(ns.contest, ns.problem, ns.file)
@@ -432,7 +436,7 @@ def main():
         pid = os.fork()
         if pid == 0:
             sys.stdout = sys.stderr = open(sess.cache_path + '/waiter.log', 'a', 1)
-            wait(sess, ns.contest, submit_id)
+            wait(sess, ns.contest, submit_id, notify=True)
             os._exit(0)
         else:
             print 'Forked waiter with PID', pid
