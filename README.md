@@ -1,8 +1,15 @@
-==== Setup ====
+Setup
+====
 
 ```
 python setup.py install
 satori login
+```
+
+Usage
+=======
+
+```
 # Show help
 satori --help
 # List contests
