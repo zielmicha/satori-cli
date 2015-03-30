@@ -46,6 +46,9 @@ class Cache(object):
             self.data = {}
 
     def save(self):
+        dir = os.path.dirname(self.path)
+        if not os.path.exists(dir):
+            os.mkdir(dir)
         suf = '.tmp%d' % random.randrange(10000)
         with open(self.path + suf, 'w') as f:
             json.dump(self.data, f)
@@ -113,7 +116,9 @@ class Session(object):
         if not 'satori_token' in self.settings:
             self._login()
         if LOG_REQUESTS:
-            sys.stderr.write('{} {}...'.format(method, path))
+            color = '\33[1;30m'
+            endcolor = '\33[m'
+            sys.stderr.write(color + '{} {}...'.format(method, path) + endcolor)
             sys.stderr.flush()
         r = requests.request(method, BASE + path,
                              files=files,
@@ -123,13 +128,15 @@ class Session(object):
                                       'satori_token='
                                       + self.settings['satori_token']})
         if LOG_REQUESTS:
-            sys.stderr.write('\b\b\b -> {}\n'.format(r.status_code))
+            sys.stderr.write(color + '\b\b\b -> {}'.format(r.status_code) + endcolor + '\n')
         if parse:
             return pq(r.content)
         else:
             return r
 
     def _login(self):
+        if 'username' not in self.settings:
+            raise SatoriError('Please login with `satori login`.')
         resp = requests.post(BASE + '/login',
                              allow_redirects=False,
                              data={
@@ -319,19 +326,8 @@ def wait(sess, contest, id):
         sess.print_status(contest, id, out)
         print >>out
 
-if __name__ == '__main__':
-    HTTP_DEBUG = False
 
-    if HTTP_DEBUG:
-        import httplib as http_client
-        http_client.HTTPConnection.debuglevel = 1
-        import logging
-        logging.basicConfig()
-        logging.getLogger().setLevel(logging.DEBUG)
-        requests_log = logging.getLogger("requests.packages.urllib3")
-        requests_log.setLevel(logging.DEBUG)
-        requests_log.propagate = True
-
+def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest='command')
     subparsers.add_parser(
@@ -448,3 +444,21 @@ if __name__ == '__main__':
         path = os.path.expanduser('~/.cache/satori')
         for file in os.listdir(path):
             os.unlink(path + '/' + file)
+
+if __name__ == '__main__':
+    HTTP_DEBUG = False
+
+    if HTTP_DEBUG:
+        import httplib as http_client
+        http_client.HTTPConnection.debuglevel = 1
+        import logging
+        logging.basicConfig()
+        logging.getLogger().setLevel(logging.DEBUG)
+        requests_log = logging.getLogger("requests.packages.urllib3")
+        requests_log.setLevel(logging.DEBUG)
+        requests_log.propagate = True
+
+    try:
+        main()
+    except SatoriError as err:
+        sys.exit('Error: ' + str(err))
