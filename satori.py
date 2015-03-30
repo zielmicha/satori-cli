@@ -268,12 +268,13 @@ class Session(object):
 
         return problem, status, tests
 
-    def print_status(self, contest, id):
+    def print_status(self, contest, id, out=None):
+        out = out or sys.stdout
         problem, status, tests = self.get_status(contest, id)
-        print 'Test report for %s' % problem
-        print 'Status:', status
+        print >>out, 'Test report for %s' % problem
+        print >>out, 'Status:', status
         for name, status in tests:
-            print ' - {: <10} {}'.format(name, status)
+            print >>out, ' - {: <10} {}'.format(name, status)
 
     def submit(self, contest, problem, file):
         name = file.split('/')[-1]
@@ -313,6 +314,10 @@ def wait(sess, contest, id):
         if status and status != 'QUE':
             break
         time.sleep(10)
+
+    with open(sess.cache_path + '/last.txt', 'a') as out:
+        sess.print_status(contest, id, out)
+        print >>out
 
 if __name__ == '__main__':
     HTTP_DEBUG = False
@@ -374,6 +379,10 @@ if __name__ == '__main__':
     submit_parser.add_argument('file')
 
     subparsers.add_parser(
+        'last',
+        help='Show results of recently submitted tasks.')
+
+    subparsers.add_parser(
         'clear-cache',
         help='Clear cache.')
 
@@ -431,6 +440,9 @@ if __name__ == '__main__':
             os._exit(0)
         else:
             print 'Forked waiter with PID', pid
+
+    elif ns.command == 'last':
+        subprocess.check_call(['tail', '-n', '200', sess.cache_path + '/last.txt'])
 
     elif ns.command == 'clear-cache':
         path = os.path.expanduser('~/.cache/satori')
