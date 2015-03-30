@@ -24,7 +24,7 @@ def parse_html(html):
     return tree
 
 class SatoriError(Exception):
-    pass
+    __module__ = 'satori'
 
 def match_code(query, code):
     query = query.lower()
@@ -109,13 +109,16 @@ class Session(object):
 
     # HTTP
 
-    def request(self, method, path, parse=True):
+    def request(self, method, path, parse=True, data={}, files={}):
         if not 'satori_token' in self.settings:
             self._login()
         if LOG_REQUESTS:
             sys.stderr.write('{} {}...'.format(method, path))
             sys.stderr.flush()
         r = requests.request(method, BASE + path,
+                             files=files,
+                             allow_redirects=False,
+                             data=data,
                              headers={'Cookie':
                                       'satori_token='
                                       + self.settings['satori_token']})
@@ -124,7 +127,7 @@ class Session(object):
         if parse:
             return pq(r.content)
         else:
-            return r.content
+            return r
 
     def _login(self):
         resp = requests.post(BASE + '/login',
@@ -215,7 +218,7 @@ class Session(object):
         except ValueError:
             pass
 
-        for id, code, desc in self.get_problems(problem):
+        for id, code, desc in self.get_submit_problems(contest):
             if match_code(problem, code):
                 return (id, code)
         raise SatoriError('unknown problem %r' % problem)
@@ -244,8 +247,9 @@ class Session(object):
 
     def get_pdf(self, contest, problem):
         id, pdf, url = self.match_problem(contest, problem)
-        data = self.request('GET', pdf, parse=False)
-        return self.cache_write('%d.pdf' % id, data)
+        ret = self.request('GET', pdf, parse=False)
+        ret.raise_for_status()
+        return self.cache_write('%d.pdf' % id, ret.content)
 
     def get_status(self, contest, id):
         url = '/contest/%d/results/%d' % (self.match_contest(contest), id)
@@ -271,6 +275,30 @@ class Session(object):
         for name, status in tests:
             print ' - {: <10} {}'.format(name, status)
 
+    def submit(self, contest, problem, file):
+        name = file.split('/')[-1]
+        url = '/contest/%d/submit' % self.match_contest(contest)
+        problem, problemcode = self.match_submit_problem(contest, problem)
+
+        ret = self.request('POST', url,
+                           data={'problem': problem},
+                           files={'codefile': (name, open(file), 'text/plain')},
+                           parse=False)
+
+        if ret.status_code != 302:
+            err_path = self.cache_path + '/error.html'
+            with open(err_path, 'w') as f:
+                f.write(ret.content)
+            raise SatoriError('submit failed (check error: {})'.format(err_path))
+
+        return problemcode
+
+    def get_last_submit(self, contest):
+        url = '/contest/%d/results' % self.match_contest(contest)
+        body = self.request('GET', url)
+        tr = body.find('table.results').find('tr')[1]
+        return int(pq(tr).find('a').text())
+
 def notify_status(problem, status):
     subprocess.check_call(['notify-send', 'New status for {}: {}'.format(problem, status)])
 
@@ -287,6 +315,18 @@ def wait(sess, contest, id):
         time.sleep(10)
 
 if __name__ == '__main__':
+    HTTP_DEBUG = False
+
+    if HTTP_DEBUG:
+        import httplib as http_client
+        http_client.HTTPConnection.debuglevel = 1
+        import logging
+        logging.basicConfig()
+        logging.getLogger().setLevel(logging.DEBUG)
+        requests_log = logging.getLogger("requests.packages.urllib3")
+        requests_log.setLevel(logging.DEBUG)
+        requests_log.propagate = True
+
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest='command')
     subparsers.add_parser(
@@ -324,7 +364,14 @@ if __name__ == '__main__':
         'wait',
         help='Wait for submit status change and show notification.')
     wait_parser.add_argument('contest')
-    wait_parser.add_argument('id', type=int)
+    wait_parser.add_argument('id', type=int, default=0, nargs='?')
+
+    submit_parser = subparsers.add_parser(
+        'submit',
+        help='Submit a solution..')
+    submit_parser.add_argument('contest')
+    submit_parser.add_argument('problem')
+    submit_parser.add_argument('file')
 
     subparsers.add_parser(
         'clear-cache',
@@ -368,7 +415,22 @@ if __name__ == '__main__':
         sess.print_status(ns.contest, ns.id)
 
     elif ns.command == 'wait':
-        wait(sess, ns.contest, ns.id)
+        id = ns.id
+        if id == 0:
+            id = sess.get_last_submit(ns.contest)
+        wait(sess, ns.contest, id)
+
+    elif ns.command == 'submit':
+        sess.submit(ns.contest, ns.problem, ns.file)
+        submit_id = sess.get_last_submit(ns.contest)
+        print 'Submitted as', submit_id
+        pid = os.fork()
+        if pid == 0:
+            sys.stdout = sys.stderr = open(sess.cache_path + '/waiter.log', 'a', 1)
+            wait(sess, ns.contest, submit_id)
+            os._exit(0)
+        else:
+            print 'Forked waiter with PID', pid
 
     elif ns.command == 'clear-cache':
         path = os.path.expanduser('~/.cache/satori')
