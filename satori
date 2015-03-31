@@ -480,11 +480,10 @@ def main():
 
 def check_new_version():
     try:
-        url = 'https://github.com/zielmicha/satori-cli/'
-        data = requests.get(url + 'blob/master/version').content.strip()
+        data = requests.get('https://raw.githubusercontent.com/zielmicha/satori-cli/master/version').content.strip()
         if data != __version__:
             print 'New version of satori-cli is available. '
-            print 'Download it from ' + url
+            print 'Download it from https://github.com/zielmicha/satori-cli'
     except Exception as ex:
         print 'Failed to check for new version:', ex
 
