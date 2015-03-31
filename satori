@@ -272,6 +272,8 @@ class Session(object):
 
     def get_pdf(self, contest, problem):
         id, pdf, url = self.match_problem(contest, problem)
+        if not pdf:
+            return None
         ret = self.request('GET', pdf, parse=False)
         ret.raise_for_status()
         return self.cache_write('%d.pdf' % id, ret.content)
@@ -425,7 +427,10 @@ def main():
     elif ns.command == 'problem':
         def open_pdf():
             path = sess.get_pdf(ns.contest, ns.problem)
-            webbrowser.open('file://' + path)
+            if not path:
+                print 'Problem statement missing.'
+            else:
+                webbrowser.open('file://' + path)
 
         if ns.pdf:
             open_pdf()
@@ -486,3 +491,5 @@ if __name__ == '__main__':
         main()
     except SatoriError as err:
         sys.exit('Error: ' + str(err))
+    except KeyboardInterrupt:
+        sys.exit('Interrupted')
