@@ -116,11 +116,11 @@ class Session(object):
         if not 'satori_token' in self.settings:
             self._login()
         if LOG_REQUESTS:
-            log_line = '{} {}...'.format(method, path)
+            log_line = '{} {}'.format(method, path)
             color1 = '\33[0;33m'
             color2 = '\33[1;30m'
             endcolor = '\33[m'
-            sys.stderr.write(color1 + log_line + endcolor)
+            sys.stderr.write(color1 + log_line + '...'  + endcolor)
             sys.stderr.flush()
         r = requests.request(method, BASE + path,
                              files=files,
@@ -130,7 +130,7 @@ class Session(object):
                                       'satori_token='
                                       + self.settings['satori_token']})
         if LOG_REQUESTS:
-            sys.stderr.write(color2 + '\r' + log_line + '-> {}'.format(r.status_code) + endcolor + '\n')
+            sys.stderr.write(color2 + '\r' + log_line + ' -> {}'.format(r.status_code) + endcolor + '\n')
         if parse:
             return pq(r.content)
         else:
@@ -324,9 +324,10 @@ def wait(sess, contest, id, notify=True):
             break
         time.sleep(10)
 
-    with open(sess.cache_path + '/last.txt', 'a') as out:
-        sess.print_status(contest, id, out)
-        print >>out
+    if notify:
+        with open(sess.cache_path + '/last.txt', 'a') as out:
+            sess.print_status(contest, id, out)
+            print >>out
 
     if not notify:
         sess.print_status(contest, id)
@@ -363,7 +364,7 @@ def main():
         'status',
         help='Show submit status.')
     status_parser.add_argument('contest')
-    status_parser.add_argument('id', type=int)
+    status_parser.add_argument('id', type=int, default=0, nargs='?')
 
     wait_parser = subparsers.add_parser(
         'wait',
@@ -421,7 +422,10 @@ def main():
                 webbrowser.open(BASE + url)
 
     elif ns.command == 'status':
-        sess.print_status(ns.contest, ns.id)
+        id = ns.id
+        if id == 0:
+            id = sess.get_last_submit(ns.contest)
+        sess.print_status(ns.contest, id)
 
     elif ns.command == 'wait':
         id = ns.id
