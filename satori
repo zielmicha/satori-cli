@@ -112,9 +112,7 @@ class Session(object):
 
     # HTTP
 
-    def request(self, method, path, parse=True, data={}, files={}):
-        if not 'satori_token' in self.settings:
-            self._login()
+    def _do_request(self, method, path, parse=True, cookie=True, data={}, files={}):
         if LOG_REQUESTS:
             log_line = '{} {}'.format(method, path)
             color1 = '\33[0;33m'
@@ -128,9 +126,26 @@ class Session(object):
                              data=data,
                              headers={'Cookie':
                                       'satori_token='
-                                      + self.settings['satori_token']})
+                                      + self.settings['satori_token']} if cookie else {})
+
         if LOG_REQUESTS:
             sys.stderr.write(color2 + '\r' + log_line + ' -> {}'.format(r.status_code) + endcolor + '\n')
+
+        return r
+
+    def request(self, method, path, **kwargs):
+        parse = kwargs.get('parse', True)
+
+        if not 'satori_token' in self.settings:
+            self._login()
+
+        r = self._do_request(method, path)
+
+        if r.status_code == 302 and r.headers['location'].startswith(BASE + '/login'):
+            self._login()
+            self.save()
+            r = self._do_request(method, path)
+
         if parse:
             return pq(r.content)
         else:
@@ -139,11 +154,12 @@ class Session(object):
     def _login(self):
         if 'username' not in self.settings:
             raise SatoriError('Please login with `satori login`.')
-        resp = requests.post(BASE + '/login',
-                             allow_redirects=False,
-                             data={
-                                 'login': self.settings['username'],
-                                 'password': self.settings['password'].decode('hex')})
+        resp = self._do_request('POST', '/login',
+                                cookie=False,
+                                parse=False,
+                                data={
+                                    'login': self.settings['username'],
+                                    'password': self.settings['password'].decode('hex')})
         if resp.status_code == 302:
             cookie = resp.headers['set-cookie']
             token = cookie.split('=')[1].split(';')[0]
