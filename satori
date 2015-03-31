@@ -139,7 +139,7 @@ class Session(object):
         if not 'satori_token' in self.settings:
             self._login()
 
-        r = self._do_request(method, path)
+        r = self._do_request(method, path, **kwargs)
 
         if r.status_code == 302 and r.headers['location'].startswith(BASE + '/login'):
             self._login()
