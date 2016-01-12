@@ -30,7 +30,7 @@ class SatoriError(Exception):
 
 def match_code(query, code):
     query = query.lower()
-    code = code.lower()
+    code = code.lower().encode('utf8')
     return query == code or query + '*' == code
 
 class Cache(object):
