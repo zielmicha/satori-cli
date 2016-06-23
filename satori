@@ -171,8 +171,8 @@ class Session(object):
 
     # API
 
-    def get_contests(self, other=False):
-        resp = self.request('GET', '/contest/select')
+    def get_contests(self, other=False, archived=False):
+        resp = self.request('GET', '/contest/select' + ('?participating_limit=0&participating_filter_archived=1' if archived else ''))
         tables = resp.find('.results')
         if not other:
             tables = pq(tables[0])
@@ -329,6 +329,24 @@ class Session(object):
         tr = body.find('table.results').find('tr')[1]
         return int(pq(tr).find('a').text())
 
+    def get_submits(self, contest):
+        url = '/contest/%d/results?results_limit=2000' % self.match_contest(contest)
+        body = self.request('GET', url)
+        rows = body.find('table.results').find('tr')[1:]
+        for row in rows:
+            status = pq(row).find('.submitstatus').text()
+            id = int(pq(row).find('a').text())
+            name = row[1].text
+            yield id, name, status
+
+    def print_submits(self, contest):
+        for id, name, status in self.get_submits(contest):
+            print u'{}\t{}\t{}'.format(id, name, status)
+
+    def download_submit(self, submit):
+        resp = self.request('GET', '/download/Submit/%d/data/content/info.txt' % submit, parse=False)
+        return resp.content
+
 def notify_status(problem, status):
     subprocess.check_call(['notify-send', 'New status for {}: {}'.format(problem, status)])
 
@@ -352,6 +370,38 @@ def wait(sess, contest, id, notify=True):
     if not notify:
         sess.print_status(contest, id)
 
+def download_submits(sess, contest, dir):
+    from magic import Magic
+    import mimetypes
+
+    magic = Magic(mime=True, uncompress=False)
+    mimetype_to_ext = dict( (v, k) for k, v in mimetypes.types_map.items() )
+    mimetype_to_ext['text/x-c'] = '.cpp'
+
+    submits = list(sess.get_submits(contest))
+
+    for id, name, status in submits:
+        status = status.split()[0]
+
+        if '/' in name:
+            raise ValueError('bad task name')
+        if '/' in status:
+            raise ValueError('bad status name')
+
+        if not status:
+            status = 'UNK'
+
+        data = sess.download_submit(id)
+        mime = magic.from_buffer(data).split(';')[0]
+        ext = mimetype_to_ext.get(mime, '.txt')
+
+        path = dir + '/%s/%d_%s%s' % (name, id, status, ext)
+        dirs = os.path.dirname(path)
+        if not os.path.exists(dirs):
+            os.makedirs(dirs)
+        with open(path, 'wb') as f:
+            f.write(data)
+
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest='command')
@@ -363,6 +413,7 @@ def main():
         'contests',
         help='List contests')
     contests_parser.add_argument('--show-other', action='store_true')
+    contests_parser.add_argument('--show-archived', action='store_true')
 
     problems_parser = subparsers.add_parser(
         'problems',
@@ -392,6 +443,17 @@ def main():
     wait_parser.add_argument('contest')
     wait_parser.add_argument('id', type=int, default=0, nargs='?')
 
+    submits_parser = subparsers.add_parser(
+        'submits',
+        help='List submits.')
+    submits_parser.add_argument('contest')
+
+    downloadsubmits_parser = subparsers.add_parser(
+        'downloadsubmits',
+        help='Downloads your submissions.')
+    downloadsubmits_parser.add_argument('contest')
+    downloadsubmits_parser.add_argument('dir')
+
     submit_parser = subparsers.add_parser(
         'submit',
         help='Submit a solution..')
@@ -418,7 +480,7 @@ def main():
         sess.save()
 
     elif ns.command == 'contests':
-        sess.print_contests(other=ns.show_other)
+        sess.print_contests(other=ns.show_other, archived=ns.show_archived)
 
     elif ns.command == 'problems':
         if ns.submit:
@@ -469,6 +531,12 @@ def main():
             os._exit(0)
         else:
             print 'Forked waiter with PID', pid
+
+    elif ns.command == 'submits':
+        sess.print_submits(ns.contest)
+
+    elif ns.command == 'downloadsubmits':
+        download_submits(sess, ns.contest, ns.dir)
 
     elif ns.command == 'last':
         subprocess.check_call(['tail', '-n', '200', sess.cache_path + '/last.txt'])
