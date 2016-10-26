@@ -240,11 +240,6 @@ class Session(object):
 
     @cached('match_submit_problem_cache')
     def match_submit_problem(self, contest, problem):
-        try:
-            return int(problem)
-        except ValueError:
-            pass
-
         for id, code, desc in self.get_submit_problems(contest):
             if match_code(problem, code):
                 return (id, code)
