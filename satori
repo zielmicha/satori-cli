@@ -426,6 +426,11 @@ def main():
     problem_parser.add_argument('--pdf', action='store_true',
                                 help='Open PDF instead of problem page.')
 
+    downloadproblems_parser = subparsers.add_parser(
+        'downloadproblems',
+        help='Download all problem PDFs from a given contest.')
+    downloadproblems_parser.add_argument('contest')
+
     status_parser = subparsers.add_parser(
         'status',
         help='Show submit status.')
@@ -500,6 +505,20 @@ def main():
                 open_pdf()
             else:
                 webbrowser.open(BASE + url)
+
+    elif ns.command == 'downloadproblems':
+        for id, pdf, url, code, title, desc in sess.get_problems(ns.contest):
+            if '/' in code or '\0' in code:
+                raise Exception('invalid task code')
+
+            if not pdf:
+                print 'skip task', title
+                continue
+
+            ret = sess.request('GET', pdf, parse=False)
+            ret.raise_for_status()
+            with open(code + '.pdf', 'wb') as f:
+                f.write(ret.content)
 
     elif ns.command == 'status':
         id = ns.id
